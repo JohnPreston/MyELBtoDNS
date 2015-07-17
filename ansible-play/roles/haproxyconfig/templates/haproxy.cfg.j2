@@ -1,0 +1,32 @@
+#---------------------------------------------------------------------
+# Global settings
+#---------------------------------------------------------------------
+global
+    log         127.0.0.1 local2
+
+    chroot      /var/lib/haproxy
+    pidfile     /var/run/haproxy.pid
+    maxconn     8092
+    user        haproxy
+    group       haproxy
+    daemon
+
+    # turn on stats unix socket
+    #stats socket /var/lib/haproxy/stats
+
+defaults
+    mode                    tcp
+    log                     global
+
+#---------------------------------------------------------------------
+# round robin balancing between the LoadBalancers
+#---------------------------------------------------------------------
+
+listen elb :80
+    mode tcp
+    option tcplog
+    balance leastconn
+{% set i = 0 %}
+{% for elb_ip in elbs_addresses.stdout_lines %}
+    server elb {{ elb_ip| ipaddr('address') }}:80 check
+{% endfor %}
