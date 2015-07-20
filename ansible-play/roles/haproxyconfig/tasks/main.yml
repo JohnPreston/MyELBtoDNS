@@ -1,4 +1,7 @@
-# - 
+# -
+
+- name: Install required packages
+  yum: name=python-netaddr state=latest
 
 - name: Get the instance EC2 info
   action: ec2_facts
