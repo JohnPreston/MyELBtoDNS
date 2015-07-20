@@ -1,0 +1,437 @@
+{
+    "AWSTemplateFormatVersion" : "2010-09-09",
+    "Description"              : "Eucalyptus pre-ELB layer using HAProxy to transmit to DNS based destination. Author : John Mille",
+    "Parameters"               : {
+        "InstanceType" : {
+            "Description" : "WebServer EC2 instance type",
+            "Type"        : "String",
+            "Default"     : "m1.small",
+            "AllowedValues" : [
+                "t1.micro",
+                "m1.small",
+                "m1.medium",
+                "m1.large",
+                "c1.medium"
+            ],
+            "ConstraintDescription" : "must be a valid EC2 instance type."
+        },
+        "WebServerPort" : {
+            "Description" : "TCP/IP port of the web server",
+            "Type"        : "String",
+            "Default"     : "80"
+        },
+        "KeyName"       : {
+            "Description" : "Name of an existing EC2 KeyPair to enable SSH access to the instances",
+            "Type"        : "String",
+            "MinLength"   : "1",
+            "MaxLength"   : "255",
+            "AllowedPattern" : "[\\x20-\\x7E]*",
+            "ConstraintDescription" : "can contain only ASCII characters."
+        },
+        "ImageId"       : {
+            "Description" : "Name of the image to be used",
+            "Type"        : "String",
+            "MinLength"   : "1",
+            "MaxLength"   : "255",
+            "AllowedPattern" : "emi-[\\x20-\\x7E]*",
+            "ConstraintDescription" : "can contain only ASCII characters."
+        },
+        "SSHLocation"   : {
+            "Description" : "The IP address range that can be used to SSH to the EC2 instances",
+            "Type"        : "String",
+            "MinLength"   : "9",
+            "MaxLength"   : "18",
+            "Default"     : "0.0.0.0/0",
+            "AllowedPattern" : "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+            "ConstraintDescription" : "must be a valid IP CIDR range of the form x.x.x.x/x."
+        },
+        "NTPServer"     : {
+            "Description" : "The IP address to sync NTP on the first run",
+            "Type"        : "String",
+            "MinLength"   : "7",
+            "MaxLength"   : "15",
+            "Default"     : "80.93.163.202",
+            "AllowedPattern" : "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})",
+            "ConstraintDescription" : "must be a valid IP CIDR range of the form x.x.x.x"
+        },
+        "EIP01"         : {
+            "Description" : "The Primary EIP address to be used",
+            "Type"        : "String",
+            "MinLength"   : "7",
+            "MaxLength"   : "15",
+            "AllowedPattern" : "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})",
+            "ConstraintDescription" : "must be a valid IP CIDR range of the form x.x.x.x"
+        },
+        "EIP02"         : {
+            "Description" : "The Second EIP address to be used",
+            "Type"        : "String",
+            "MinLength"   : "7",
+            "MaxLength"   : "15",
+            "AllowedPattern" : "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})",
+            "ConstraintDescription" : "must be a valid IP CIDR range of the form x.x.x.x"
+        },
+		  "CLCIP"         : {
+            "Description" : "The IP of the CLC to be used",
+            "Type"        : "String",
+            "MinLength"   : "7",
+            "MaxLength"   : "15",
+            "AllowedPattern" : "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})",
+            "ConstraintDescription" : "must be a valid IP CIDR range of the form x.x.x.x"
+        },
+        "DestELB"       : {
+            "Description" : "The ELB DNS Name to monitor",
+            "Type"        : "String",
+            "MinLength"   : "8",
+            "MaxLength"   : "256"
+        },
+        "CFURL"         : {
+            "Description" : "The Eucalyptus cloud CloudFormation URL",
+            "Type"        : "String",
+            "MinLength"   : "8",
+            "MaxLength"   : "256"
+        },
+		 "EC2URL"         : {
+            "Description" : "The Eucalyptus cloud EC2 URL",
+            "Type"        : "String",
+            "MinLength"   : "8",
+            "MaxLength"   : "256"
+        }
+    },
+    "Mappings"                 : {
+    },
+    "Resources"                : {
+        "preELBASG" : {
+            "Type" : "AWS::AutoScaling::AutoScalingGroup",
+            "Properties" : {
+                "AvailabilityZones" : {
+                    "Fn::GetAZs" : ""
+                },
+                "LaunchConfigurationName" : {
+                    "Ref" : "lcPreELB"
+                },
+                "MinSize"                 : "2",
+                "MaxSize"                 : "2",
+                "MetricsCollection"       : [
+                    {
+                        "Granularity" : "1Minute",
+                        "Metrics"     : [
+                            "GroupMinSize",
+                            "GroupMaxSize"
+                        ]
+                    }
+                ]
+            }
+        },
+        "lcPreELB"  : {
+            "Type" : "AWS::AutoScaling::LaunchConfiguration",
+            "Properties" : {
+                "KeyName" : {
+                    "Ref" : "KeyName"
+                },
+                "ImageId" : {
+                    "Ref" : "ImageId"
+                },
+                "IamInstanceProfile" : {
+                    "Ref" : "HAProxyProfile"
+                },
+                "SecurityGroups"     : [
+                    {
+                        "Ref" : "sgPreELBGroup"
+                    }
+                ],
+                "InstanceType"       : {
+                    "Ref" : "InstanceType"
+                },
+                "UserData"           : {
+                    "Fn::Base64" : {
+                        "Fn::Join" : [
+                            "",
+                            [
+                                "#!/bin/bash\n",
+                                "ntpdate -u ",
+                                {
+                                    "Ref" : "NTPServer"
+                                },
+                                "\n",
+                                "# Helper function\n",
+                                "function error_exit\n",
+                                "{\n",
+                                "  /opt/aws/bin/cfn-signal -e 1 -r \"$1\" '",
+                                {
+                                    "Ref" : "WHLcPreELBASG"
+                                },
+                                "'\n",
+                                "  exit 1\n",
+                                "}\n",
+                                "# Run cfn init\n",
+                                "/opt/aws/bin/cfn-init -s ",
+                                {
+                                    "Ref" : "AWS::StackName"
+                                },
+                                " -u ",
+                                {
+                                    "Ref" : "CFURL"
+                                },
+                                " -r lcPreELB ",
+                                " --region ",
+                                {
+                                    "Ref" : "AWS::Region"
+                                },
+                                " --role=",
+                                {
+                                    "Ref" : "HAProxyRole"
+                                },
+                                " || error_exit 'Failed to run cfn-init'\n",
+                                "# Start up the cfn-hup daemon to listen for changes\n",
+                                "/opt/aws/bin/cfn-hup || error_exit 'Failed to start cfn-hup'\n",
+                                "# All done so signal success\n",
+                                "/opt/aws/bin/cfn-signal -e 0 -r \"Server setup complete\" '",
+                                {
+                                    "Ref" : "WHLcPreELBASG"
+                                },
+                                "'\n"
+                            ]
+                        ]
+                    }
+                }
+            },
+            "Metadata"   : {
+                "AWS::CloudFormation::Init" : {
+                    "config" : {
+                        "files" : {
+                            "/var/tmp/eip.txt" : {
+                                "content" : {
+                                    "Fn::Join" : [
+                                        "",
+                                        [
+                                            {
+                                                "Ref" : "EIP01"
+                                            },
+                                            "\n",
+                                            {
+                                                "Ref" : "EIP02"
+                                            },
+                                            "\n"
+                                        ]
+                                    ]
+                                },
+                                "mode"    : "000600",
+                                "owner"   : "root",
+                                "group"   : "root"
+                            },
+							 "/var/tmp/elb.txt" : {
+                                "content" : {
+                                    "Fn::Join" : [
+                                        "",
+                                        [
+                                            {
+                                                "Ref" : "DestELB"
+                                            },
+                                            "\n"                                           
+                                        ]
+                                    ]
+                                },
+                                "mode"    : "000600",
+                                "owner"   : "root",
+                                "group"   : "root"
+                            },
+							"/var/tmp/ec2.txt" : {
+                                "content" : {
+                                    "Fn::Join" : [
+                                        "",
+                                        [
+                                            {
+                                                "Ref" : "EC2URL"
+                                            },
+                                            "\n"                                           
+                                        ]
+                                    ]
+                                },
+                                "mode"    : "000600",
+                                "owner"   : "root",
+                                "group"   : "root"
+                            },
+							"/var/tmp/clc.txt" : {
+                                "content" : {
+                                    "Fn::Join" : [
+                                        "",
+                                        [
+                                            {
+                                                "Ref" : "CLCIP"
+                                            },
+                                            "\n"                                           
+                                        ]
+                                    ]
+                                },
+                                "mode"    : "000600",
+                                "owner"   : "root",
+                                "group"   : "root"
+                            }
+                        },
+                        "commands" : {
+                            "0000-repos" : {
+                                "command" : "yum install http://download.fedoraproject.org/pub/epel/6/x86_64/epel-release-6-8.noarch.rpm -y "
+                            },
+                            "0001-haproxy" : {
+                                "command" : "haproxy -v || yum install haproxy -y"
+                            },
+                            "0002-ansible\t" : {
+                                "command" : " ansible --version || yum install ansible -y"
+                            },
+                            "0003-git"      : {
+                                "command" : "git --version || yum install git -y"
+                            },
+                            "0004-haproxyGit" : {
+                                "command" : "git clone https://github.com/JohnPreston/MyELBtoDNS /var/tmp/MyELBtoDNS"
+                            },
+							"0005-dependencies":
+							{	
+								"command": "yum install python-netaddr -y"
+							},
+							"0006-RunAnsible":
+								{
+									"command": "ansible-playbook /var/tmp/MyELBtoDNS/ansible-play/elb.yml -vvvv -e elb_dns_name=`head -1 /var/tmp/elb.txt` -e ec2_url=`head -1 /var/tmp/ec2.txt`  -e clc_ip=`head -1 /var/tmp/clc.txt`",
+									"ignoreErrors": "True"
+								}
+                        }
+                    }
+                }
+            }
+        },
+        "WHLcPreELBASG" : {
+            "Type" : "AWS::CloudFormation::WaitConditionHandle"
+        },
+        "WCLcPreELBASG" : {
+            "Type" : "AWS::CloudFormation::WaitCondition",
+            "DependsOn" : "lcPreELB",
+            "Properties" : {
+                "Handle" : {
+                    "Ref" : "WHLcPreELBASG"
+                },
+                "Timeout" : "2000"
+            }
+        },
+        "sgPreELBGroup" : {
+            "Type" : "AWS::EC2::SecurityGroup",
+            "Properties" : {
+                "GroupDescription" : "Enable SSH access and HTTP access on the inbound port",
+                "SecurityGroupIngress" : [
+                    {
+                        "IpProtocol" : "tcp",
+                        "FromPort"   : "22",
+                        "ToPort"     : "22",
+                        "CidrIp"     : {
+                            "Ref" : "SSHLocation"
+                        }
+                    },
+                    {
+                        "IpProtocol" : "tcp",
+                        "FromPort"   : {
+                            "Ref" : "WebServerPort"
+                        },
+                        "ToPort"     : {
+                            "Ref" : "WebServerPort"
+                        },
+                        "CidrIp"     : "0.0.0.0/0"
+                    }
+                ]
+            }
+        },
+        "HAProxyRole"   : {
+            "Type" : "AWS::IAM::Role",
+            "Properties" : {
+                "AssumeRolePolicyDocument" : {
+                    "Version" : "2012-10-17",
+                    "Statement" : [
+                        {
+                            "Effect" : "Allow",
+                            "Principal" : {
+                                "Service" : [
+                                    "ec2.amazonaws.com"
+                                ]
+                            },
+                            "Action"    : [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Path"                     : "/",
+                "Policies"                 : [
+                    {
+                        "PolicyName" : "root",
+                        "PolicyDocument" : {
+                            "Version" : "2012-10-17",
+                            "Statement" : [
+                                {
+                                    "Action" : "ec2:AssociateAddress",
+                                    "Resource" : "*",
+                                    "Effect"   : "Allow"
+                                },
+                                {
+                                    "Action" : "ec2:DescribeAddresses",
+                                    "Resource" : "*",
+                                    "Effect"   : "Allow"
+                                },
+                                {
+                                    "Action" : "elasticloadbalancing:DescribeInstanceHealth",
+                                    "Resource" : "*",
+                                    "Effect"   : "Allow"
+                                },
+                                {
+                                    "Action" : "elasticloadbalancing:DescribeLoadBalancers",
+                                    "Resource" : "*",
+                                    "Effect"   : "Allow"
+                                },
+                                {
+                                    "Action" : "s3:GetObject",
+                                    "Resource" : "*",
+                                    "Effect"   : "Allow"
+                                },
+                                {
+                                    "Action" : "s3:ListBucket",
+                                    "Resource" : "*",
+                                    "Effect"   : "Allow"
+                                },
+                                {
+                                    "Action" : "s3:PutObject",
+                                    "Resource" : "*",
+                                    "Effect"   : "Allow"
+                                },
+                                {
+                                    "Action" : "sts:AssumeRole",
+                                    "Resource" : "*",
+                                    "Effect"   : "Allow"
+                                },
+                                {
+                                    "Action" : [
+                                        "cloudformation:CreateUploadBucket",
+                                        "cloudformation:DescribeStackEvents",
+                                        "cloudformation:DescribeStackResource",
+                                        "cloudformation:DescribeStackResources",
+                                        "cloudformation:GetTemplateSummary",
+                                        "cloudformation:ListStackResources",
+                                        "cloudformation:SignalResource"
+                                    ],
+                                    "Resource" : "*",
+                                    "Effect"   : "Allow"
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "HAProxyProfile" : {
+            "Type" : "AWS::IAM::InstanceProfile",
+            "Properties" : {
+                "Path" : "/",
+                "Roles" : [
+                    {
+                        "Ref" : "HAProxyRole"
+                    }
+                ]
+            }
+        }
+    }
+}
