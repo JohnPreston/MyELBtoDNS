@@ -17,4 +17,4 @@
   include: elb_haproxy.yml
 
 - name: Add cronjob
-  cron: name=auto-update-elb month=* day=* hour=*  minute=*/1 job="/bin/bash /root/ansible_script.sh"
+  cron: name=auto-update-elb month=* day=* hour=*  minute=*/1 job="/bin/bash /var/tmp/MyELBtoDNS/ansible-play/roles/haproxyconfig/scripts/ansible_script.sh"
