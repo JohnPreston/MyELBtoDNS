@@ -22,6 +22,15 @@ defaults
 # round robin balancing between the LoadBalancers
 #---------------------------------------------------------------------
 
+listen elb :443
+    mode tcp
+    option tcplog
+    balance leastconn
+{% set i = 0 %}
+{% for elb_ip in elbs_addresses.stdout_lines %}
+    server elb {{ elb_ip| ipaddr('address') }}:443 check
+{% endfor %}
+
 listen elb :80
     mode tcp
     option tcplog

@@ -18,9 +18,30 @@
   register: eip_present
   ignore_errors: true
 
-- name: Random pick of IP assignment
-  ec2_eip: public_ip="{{ item }}" instance_id="{{ ansible_ec2_instance_id }}"  ec2_url="{{ ec2_url }}"
+- name: Pick an EIP
+  shell: echo {{item }} 
+  register: the_eip
   with_items:
   - "{{ eips_dedicated.stdout_lines|random }}"
   when:
   - eip_present|failed
+
+- name: Debug the eip
+  debug: msg="{{ the_eip.results }}"
+
+- name: Check if EIP is used
+  shell: ping -c 100 -f {{ item['stdout'] }}
+  register: eip_reachable
+  with_items:
+  - "{{ the_eip.results }}"
+  when:
+  - eip_present|failed
+  ignore_errors: true
+
+- name: EIP assignment
+  ec2_eip: public_ip="{{ item.stdout }}" instance_id="{{ ansible_ec2_instance_id }}"  ec2_url="{{ ec2_url }}"
+  with_items:
+  - "{{ the_eip.results }}"
+  when:
+  - eip_present|failed
+  - eip_reachable|failed

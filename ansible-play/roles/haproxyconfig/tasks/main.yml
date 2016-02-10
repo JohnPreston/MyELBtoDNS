@@ -15,3 +15,6 @@
 
 - name: Configure HAProxy
   include: elb_haproxy.yml
+
+- name: Add cronjob
+  cron: name=auto-update-elb month=* day=* hour=*  minute=*/1 job="/bin/bash /root/ansible_script.sh"
