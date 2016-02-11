@@ -18,7 +18,7 @@
     "WebServerPort": {
       "Description": "TCP/IP port of the web server",
       "Type": "String",
-      "Default": "80"
+      "Default": "443"
     },
     "KeyName": {
       "Description": "Name of an existing EC2 KeyPair to enable SSH access to the instances",
@@ -50,7 +50,7 @@
       "Type": "String",
       "MinLength": "7",
       "MaxLength": "15",
-      "Default": "80.93.163.202",
+      "Default": "10.175.8.201",
       "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})",
       "ConstraintDescription": "must be a valid IP CIDR range of the form x.x.x.x"
     },
@@ -64,14 +64,6 @@
     },
     "EIP02": {
       "Description": "The Second EIP address to be used",
-      "Type": "String",
-      "MinLength": "7",
-      "MaxLength": "15",
-      "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})",
-      "ConstraintDescription": "must be a valid IP CIDR range of the form x.x.x.x"
-    },
-    "CLCIP": {
-      "Description": "The IP of the CLC to be used",
       "Type": "String",
       "MinLength": "7",
       "MaxLength": "15",
@@ -241,22 +233,6 @@
                     [
                       {
                         "Ref": "EC2URL"
-                      },
-                      "\n"
-                    ]
-                  ]
-                },
-                "mode": "000600",
-                "owner": "root",
-                "group": "root"
-              },
-              "/var/tmp/clc.txt": {
-                "content": {
-                  "Fn::Join": [
-                    "",
-                    [
-                      {
-                        "Ref": "CLCIP"
                       },
                       "\n"
                     ]
