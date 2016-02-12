@@ -21,7 +21,7 @@
   - elbs_ips
 
 - name: Update the HAproxy configuration file
-  template: src=haproxy.cfg.j2 dest=/etc/haproxy/haproxy.cfg	
+  template: src=haproxy.cfg.j2 dest=/etc/haproxy/haproxy.cfg
   register: template_status
   when: elbs_addresses|success
   tags:

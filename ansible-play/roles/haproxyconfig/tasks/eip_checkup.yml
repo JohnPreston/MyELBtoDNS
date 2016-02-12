@@ -1,6 +1,6 @@
 
 - name: Get the EIP from the local file config
-  shell: cat /var/tmp/eip.txt
+  shell: cat /var/tmp/eip.conf
   register: eips_dedicated
 
 - name: Debug local EIP from file
@@ -19,7 +19,7 @@
   ignore_errors: true
 
 - name: Pick an EIP
-  shell: echo {{item }} 
+  shell: echo {{item }}
   register: the_eip
   with_items:
   - "{{ eips_dedicated.stdout_lines|random }}"

@@ -24,14 +24,13 @@
   template: src=eip.conf.j2 dest=/var/tmp/eip.conf
 
 - name: Get the bucketname
-  shell: cat /var/tmp/bucketname.txt
+  shell: head -1 /var/tmp/bucketname.txt | awk -F. '{print $1}'
   register: bucket_name
 
 - name: Push files to the bucket
-  s3: bucket="{{ bucket_name.stdout }}" object="{{ item.split('/') | last }}" src="{{ item }}" mode=put s3_url="http://objectstorage.tulsa-cloud.corp.aimia.org:8773"
+  s3: bucket="{{ bucket_name.stdout }}" object="{{ item.split('/') | last }}" src="{{ item }}" mode=put s3_url="{{ s3_url }}"
   with_items:
   - "/var/tmp/eip.conf"
   - "/var/tmp/mgmt.conf"
   - "/var/tmp/sftp.conf"
   - "/var/tmp/eip-assignment.conf"
-
