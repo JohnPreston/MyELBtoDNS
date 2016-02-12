@@ -3,7 +3,7 @@
 #
 
 - name: Describe the addresses and get the 4 first
-  shell: aws ec2 describe-addresses --endpoint-url={{ ec2_url }} --output=text | grep -v i\- | head -4 | awk '{print $3}'
+  shell: aws ec2 describe-addresses --endpoint-url={{ ec2_url }} --output=text --region=eucalyptus | grep -v i\- | head -4 | awk '{print $3}'
   register: the_eips
 
 - name: Debug the EIPs
