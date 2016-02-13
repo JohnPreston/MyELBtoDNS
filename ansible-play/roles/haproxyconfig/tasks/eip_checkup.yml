@@ -1,3 +1,23 @@
+#
+# EIP checkup and assignement
+#
+
+- name: Who am I
+  shell: head -1 /var/tmp/whoami.conf
+  register: whoiam
+
+- name: Debug who I am
+  debug: msg="Jason Bourne is {{ whoiam.stdout }}"
+
+- name: Get the bucketname
+  shell: head -1 /var/tmp/bucketname.conf | awk -F. '{print $1}'
+  register: bucket_name
+
+- name: Debug the bucket name
+  debug: msg="{{ bucket_name.stdout }}"
+
+- name: Get the EIP config to apply
+  s3: bucket="{{ bucket_name.stdout }}" object="{{ whoiam.stdout }}.conf" dest="/var/tmp/eip.conf" mode=get s3_url="{{ s3_url }}"
 
 - name: Get the EIP from the local file config
   shell: cat /var/tmp/eip.conf
