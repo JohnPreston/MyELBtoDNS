@@ -24,7 +24,7 @@
   template: src=eip.conf.j2 dest=/var/tmp/eip.conf
 
 - name: Get the bucketname
-  shell: head -1 /var/tmp/bucketname.txt | awk -F. '{print $1}'
+  shell: head -1 /var/tmp/bucketname.conf | awk -F. '{print $1}'
   register: bucket_name
 
 - name: Push files to the bucket
