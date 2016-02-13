@@ -15,13 +15,13 @@
   template: src=eip-assignment.conf.j2 dest=/var/tmp/eip-assignment.conf
 
 - name: Get the SFTP config file
-  template: src=sftp.conf.j2 dest=/var/tmp/sftp.conf
+  template: src=sftp.conf.j2 dest=/var/tmp/ec2SFTP.conf
 
 - name: Get the MGMT config file
-  template: src=mgmt.conf.j2 dest=/var/tmp/mgmt.conf
+  template: src=mgmt.conf.j2 dest=/var/tmp/ec2Mgmt.conf
 
 - name: Get the ELB config file
-  template: src=eip.conf.j2 dest=/var/tmp/eip.conf
+  template: src=eip.conf.j2 dest=/var/tmp/asgPreELB.conf
 
 - name: Get the bucketname
   shell: head -1 /var/tmp/bucketname.conf | awk -F. '{print $1}'
