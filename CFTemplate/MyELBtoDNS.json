@@ -87,11 +87,473 @@
       "Type": "String",
       "MinLength": "8",
       "MaxLength": "256"
+    },
+    "S3URL": {
+      "Description": "The Eucalyptus cloud S3 URL",
+      "Type": "String",
+      "MinLength": "8",
+      "MaxLength": "256"
+    },
+    "StackName": {
+      "Description": "Name of the destination stack",
+      "Type": "String",
+      "MinLength": "1",
+      "MaxLength": "255",
+      "AllowedPattern": "[\\x20-\\x7E]*",
+      "ConstraintDescription": "can contain only ASCII characters."
     }
   },
   "Mappings": {},
   "Resources": {
+    "s3EIPBucket": {
+      "Type": "AWS::S3::Bucket",
+      "Properties": {
+        "AccessControl": "PublicRead",
+        "BucketName": {
+          "Ref": "StackName"
+        }
+      },
+      "DeletionPolicy": "Delete"
+    },
+    "ec2Mgmt": {
+      "DependsOn": "s3EIPBucket",
+      "Metadata": {
+        "AWS::CloudFormation::Init": {
+          "config": {
+            "files": {
+              "/var/tmp/elb.conf": {
+                "content": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Ref": "DestELB"
+                      },
+                      "\n"
+                    ]
+                  ]
+                },
+                "mode": "000600",
+                "owner": "root",
+                "group": "root"
+              },
+              "/var/tmp/ec2.conf": {
+                "content": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Ref": "EC2URL"
+                      },
+                      "\n"
+                    ]
+                  ]
+                },
+                "mode": "000600",
+                "owner": "root",
+                "group": "root"
+              },
+              "/var/tmp/s3.conf": {
+                "content": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Ref": "S3URL"
+                      },
+                      "\n"
+                    ]
+                  ]
+                },
+                "mode": "000600",
+                "owner": "root",
+                "group": "root"
+              },
+              "/var/tmp/bucketurl.conf": {
+                "content": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Ref": {
+                          "GetAtt": [
+                            "s3EIPBucket",
+                            "DomainName"
+                          ]
+                        }
+                      },
+                      "\n"
+                    ]
+                  ]
+                },
+                "mode": "000600",
+                "owner": "root",
+                "group": "root"
+              },
+              "/var/tmp/stackname.conf": {
+                "content": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Ref": "StackName"
+                      },
+                      "\n"
+                    ]
+                  ]
+                },
+                "mode": "000600",
+                "owner": "root",
+                "group": "root"
+              },
+              "/var/tmp/whoami.conf": {
+                "content": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "ec2Mgmt\n"
+                    ]
+                  ]
+                },
+                "mode": "000600",
+                "owner": "root",
+                "group": "root"
+              }
+            },
+            "commands": {
+              "0000-repos": {
+                "command": "yum install http://dl.fedoraproject.org/pub/epel/epel-release-latest-6.noarch.rpm -y || echo Already there"
+              },
+              "0001-haproxy": {
+                "command": "haproxy -v || yum install haproxy -y"
+              },
+              "0002-ansible\t": {
+                "command": " ansible --version || yum install ansible -y"
+              },
+              "0003-git": {
+                "command": "git --version || yum install git -y"
+              },
+              "0004-haproxyGit": {
+                "command": "git clone https://github.com/JohnPreston/MyELBtoDNS /var/tmp/MyELBtoDNS"
+              },
+              "0005-dependencies": {
+                "command": "yum install python-netaddr -y"
+              },
+              "0006-RunAnsible": {
+                "command": "ansible-playbook /var/tmp/MyELBtoDNS/ansible-play/init.yml -e ec2_url=`head -1 /var/tmp/ec2.conf` -e s3_url=`head -1 /var/tmp/s3.conf` -e stackname=`head -1 /var/tmp/stackname.conf`",
+                "ignoreErrors": "True"
+              }
+            }
+          }
+        }
+      },
+      "Properties": {
+        "KeyName": {
+          "Ref": "KeyName"
+        },
+        "ImageId": {
+          "Ref": "ImageId"
+        },
+        "IamInstanceProfile": {
+          "Ref": "HAProxyProfile"
+        },
+        "SecurityGroups": [
+          {
+            "Ref": "sgPreELBGroup"
+          }
+        ],
+        "InstanceType": {
+          "Ref": "InstanceType"
+        },
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "",
+              [
+                "#!/bin/bash\n",
+                "ntpdate -u ",
+                {
+                  "Ref": "NTPServer"
+                },
+                "\n",
+                "# Helper function\n",
+                "function error_exit\n",
+                "{\n",
+                "  /usr/bin/cfn-signal -e 1 -r \"$1\" '",
+                {
+                  "Ref": "WHLcPreELBASG"
+                },
+                "'\n",
+                "  exit 1\n",
+                "}\n",
+                "# Run cfn init\n",
+                "/usr/bin/cfn-init -s ",
+                {
+                  "Ref": "AWS::StackName"
+                },
+                " -u ",
+                {
+                  "Ref": "CFURL"
+                },
+                " -r lcPreELB ",
+                " --region ",
+                {
+                  "Ref": "AWS::Region"
+                },
+                " --role=",
+                {
+                  "Ref": "HAProxyRole"
+                },
+                " || error_exit 'Failed to run /usr/bin/cfn-init'\n",
+                "# Start up the /usr/bin/cfn-hup daemon to listen for changes\n",
+                "/usr/bin/cfn-hup || error_exit 'Failed to start /usr/bin/cfn-hup'\n",
+                "# All done so signal success\n",
+                "/usr/bin/cfn-signal -e 0 -r \"Server setup complete\" '",
+                {
+                  "Ref": "WHLcPreELBASG"
+                },
+                "'\n"
+              ]
+            ]
+          }
+        }
+      },
+      "Type": "AWS::EC2::Instance"
+    },
+    "ec2SFTP": {
+      "DependsOn": "ec2Mgmt",
+      "Metadata": {
+        "AWS::CloudFormation::Init": {
+          "config": {
+            "files": {
+              "/var/tmp/eip.txt": {
+                "content": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Ref": "EIP01"
+                      },
+                      "\n",
+                      {
+                        "Ref": "EIP02"
+                      },
+                      "\n"
+                    ]
+                  ]
+                },
+                "mode": "000600",
+                "owner": "root",
+                "group": "root"
+              },
+              "/var/tmp/elb.txt": {
+                "content": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Ref": "DestELB"
+                      },
+                      "\n"
+                    ]
+                  ]
+                },
+                "mode": "000600",
+                "owner": "root",
+                "group": "root"
+              },
+              "/var/tmp/ec2.txt": {
+                "content": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Ref": "EC2URL"
+                      },
+                      "\n"
+                    ]
+                  ]
+                },
+                "mode": "000600",
+                "owner": "root",
+                "group": "root"
+              }
+            },
+            "commands": {
+              "0000-repos": {
+                "command": "yum install http://dl.fedoraproject.org/pub/epel/epel-release-latest-6.noarch.rpm -y || echo Already there"
+              },
+              "0001-haproxy": {
+                "command": "haproxy -v || yum install haproxy -y"
+              },
+              "0002-ansible\t": {
+                "command": " ansible --version || yum install ansible -y"
+              },
+              "0003-git": {
+                "command": "git --version || yum install git -y"
+              },
+              "0004-haproxyGit": {
+                "command": "git clone https://github.com/JohnPreston/MyELBtoDNS /var/tmp/MyELBtoDNS"
+              },
+              "0005-dependencies": {
+                "command": "yum install python-netaddr -y"
+              },
+              "0006-RunAnsible": {
+                "command": "ansible-playbook /var/tmp/MyELBtoDNS/ansible-play/elb.yml -vvvv -e elb_dns_name=`head -1 /var/tmp/elb.txt` -e ec2_url=`head -1 /var/tmp/ec2.txt`  -e clc_ip=`head -1 /var/tmp/clc.txt`",
+                "ignoreErrors": "True"
+              }
+            }
+          }
+        }
+      },
+      "Properties": {
+        "KeyName": {
+          "Ref": "KeyName"
+        },
+        "ImageId": {
+          "Ref": "ImageId"
+        },
+        "IamInstanceProfile": {
+          "Ref": "HAProxyProfile"
+        },
+        "SecurityGroups": [
+          {
+            "Ref": "sgPreELBGroup"
+          }
+        ],
+        "InstanceType": {
+          "Ref": "InstanceType"
+        },
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "",
+              [
+                "#!/bin/bash\n",
+                "ntpdate -u ",
+                {
+                  "Ref": "NTPServer"
+                },
+                "\n",
+                "# Helper function\n",
+                "function error_exit\n",
+                "{\n",
+                "  /usr/bin/cfn-signal -e 1 -r \"$1\" '",
+                {
+                  "Ref": "WHLcPreELBASG"
+                },
+                "'\n",
+                "  exit 1\n",
+                "}\n",
+                "# Run cfn init\n",
+                "/usr/bin/cfn-init -s ",
+                {
+                  "Ref": "AWS::StackName"
+                },
+                " -u ",
+                {
+                  "Ref": "CFURL"
+                },
+                " -r lcPreELB ",
+                " --region ",
+                {
+                  "Ref": "AWS::Region"
+                },
+                " --role=",
+                {
+                  "Ref": "HAProxyRole"
+                },
+                " || error_exit 'Failed to run /usr/bin/cfn-init'\n",
+                "# Start up the /usr/bin/cfn-hup daemon to listen for changes\n",
+                "/usr/bin/cfn-hup || error_exit 'Failed to start /usr/bin/cfn-hup'\n",
+                "# All done so signal success\n",
+                "/usr/bin/cfn-signal -e 0 -r \"Server setup complete\" '",
+                {
+                  "Ref": "WHLcPreELBASG"
+                },
+                "'\n"
+              ]
+            ]
+          }
+        }
+      },
+      "Type": "AWS::EC2::Instance"
+    },
+    "WHLcPreELBASG": {
+      "Type": "AWS::CloudFormation::WaitConditionHandle"
+    },
+    "WHec2Mgmt": {
+      "Type": "AWS::CloudFormation::WaitConditionHandle"
+    },
+    "WCLcPreELBASG": {
+      "Type": "AWS::CloudFormation::WaitCondition",
+      "DependsOn": "lcPreELB",
+      "Properties": {
+        "Handle": {
+          "Ref": "WHLcPreELBASG"
+        },
+        "Timeout": "2000"
+      }
+    },
+    "WCec2Mgmt": {
+      "Type": "AWS::CloudFormation::WaitCondition",
+      "DependsOn": "lcPreELB",
+      "Properties": {
+        "Handle": {
+          "Ref": "WHLcPreELBASG"
+        },
+        "Timeout": "2000"
+      }
+    },
+    "sgPreELBGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Enable SSH access and HTTP access on the inbound port",
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "22",
+            "ToPort": "22",
+            "CidrIp": {
+              "Ref": "SSHLocation"
+            }
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": {
+              "Ref": "WebServerPort"
+            },
+            "ToPort": {
+              "Ref": "WebServerPort"
+            },
+            "CidrIp": "0.0.0.0/0"
+          }
+        ]
+      }
+    },
+    "sgPreELBIngress": {
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "GroupId": {
+          "Fn::GetAtt": [
+            "sgPreELBGroup",
+            "GroupId"
+          ]
+        },
+        "IpProtocol": "icmp",
+        "FromPort": "-1",
+        "ToPort": "-1",
+        "SourceSecurityGroupId": {
+          "Fn::GetAtt": [
+            "sgPreELBGroup",
+            "GroupId"
+          ]
+        }
+      },
+      "DependsOn": "sgPreELBGroup"
+    },
     "preELBASG": {
+      "DependsOn": "ec2Mgmt",
       "Type": "AWS::AutoScaling::AutoScalingGroup",
       "Properties": {
         "AvailabilityZones": {
@@ -114,6 +576,7 @@
       }
     },
     "lcPreELB": {
+      "DependsOn": "ec2Mgmt",
       "Type": "AWS::AutoScaling::LaunchConfiguration",
       "Properties": {
         "KeyName": {
@@ -270,66 +733,6 @@
           }
         }
       }
-    },
-    "WHLcPreELBASG": {
-      "Type": "AWS::CloudFormation::WaitConditionHandle"
-    },
-    "WCLcPreELBASG": {
-      "Type": "AWS::CloudFormation::WaitCondition",
-      "DependsOn": "lcPreELB",
-      "Properties": {
-        "Handle": {
-          "Ref": "WHLcPreELBASG"
-        },
-        "Timeout": "2000"
-      }
-    },
-    "sgPreELBGroup": {
-      "Type": "AWS::EC2::SecurityGroup",
-      "Properties": {
-        "GroupDescription": "Enable SSH access and HTTP access on the inbound port",
-        "SecurityGroupIngress": [
-          {
-            "IpProtocol": "tcp",
-            "FromPort": "22",
-            "ToPort": "22",
-            "CidrIp": {
-              "Ref": "SSHLocation"
-            }
-          },
-          {
-            "IpProtocol": "tcp",
-            "FromPort": {
-              "Ref": "WebServerPort"
-            },
-            "ToPort": {
-              "Ref": "WebServerPort"
-            },
-            "CidrIp": "0.0.0.0/0"
-          }
-        ]
-      }
-    },
-    "sgPreELBIngress": {
-      "Type": "AWS::EC2::SecurityGroupIngress",
-      "Properties": {
-        "GroupId": {
-          "Fn::GetAtt": [
-            "sgPreELBGroup",
-            "GroupId"
-          ]
-        },
-        "IpProtocol": "icmp",
-        "FromPort": "-1",
-        "ToPort": "-1",
-        "SourceSecurityGroupId": {
-          "Fn::GetAtt": [
-            "sgPreELBGroup",
-            "GroupId"
-          ]
-        }
-      },
-      "DependsOn": "sgPreELBGroup"
     },
     "HAProxyRole": {
       "Type": "AWS::IAM::Role",
