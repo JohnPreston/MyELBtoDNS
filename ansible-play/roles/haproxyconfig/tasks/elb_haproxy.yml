@@ -3,7 +3,7 @@
   debug: msg={{ elb_dns_name }}
 
 - name: Resolve ELB DNS name A records
-  shell: dig {{ elb_dns_name }} |  grep IN | grep A | grep -v SOA | grep lb | grep -v \; |  awk '{print $5}' | sort
+  shell: dig {{ elb_dns_name }} |  grep IN | grep A | grep -v SOA | egrep '(elb|eucalyptus)' | grep -v \; |  awk '{print $5}' | sort
   register: elbs_addresses
   ignore_errors: true
   tags:
